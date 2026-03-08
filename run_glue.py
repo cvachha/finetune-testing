@@ -125,6 +125,10 @@ def train(args, train_dataset, model, tokenizer):
             if args.gradient_accumulation_steps > 1:
                 loss = loss / args.gradient_accumulation_steps
 
+            # print loss for first 5 minibatches
+            if step < 5:
+                print(f"minibatch " + str(step + 1) + " loss: "+str(loss.item()))
+
             if args.fp16:
                 with amp.scale_loss(loss, optimizer) as scaled_loss:
                     scaled_loss.backward()
