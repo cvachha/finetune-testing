@@ -458,14 +458,18 @@ def main():
 
     model.to(args.device)
     
-    
-    
-    model = torch.nn.parallel.DistributedDataParallel(
-        model,
-        device_ids=[args.local_rank],
-        output_device=args.local_rank,
-        find_unused_parameters=True
-    )
+    if args.device.type == 'cuda':
+        model = torch.nn.parallel.DistributedDataParallel(
+            model,
+            device_ids=[args.local_rank],
+            output_device=args.local_rank,
+            find_unused_parameters=True
+        )
+    else:
+        model = torch.nn.parallel.DistributedDataParallel(
+            model,
+            find_unused_parameters=True
+        )
 
     logger.info("Training/evaluation parameters %s", args)
 
