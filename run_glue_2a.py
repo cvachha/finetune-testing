@@ -121,7 +121,7 @@ def train(args, train_dataset, model, tokenizer):
     # Ensure output directory exists for all ranks
     os.makedirs(args.output_dir, exist_ok=True)
     
-    loss_log_file = os.path.join(args.output_dir, f"loss_curve_rank_{rank_id}.txt")
+    loss_log_file = os.path.join(args.output_dir, f"loss_curve_rank_{rank_id}_task2a.txt")
     with open(loss_log_file, 'w') as f:
         f.write("step,current_loss,avg_loss,time_per_iter_avg,iter_time,eta_minutes\n")
     
