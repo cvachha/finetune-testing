@@ -72,7 +72,7 @@ def train(args, train_dataset, model, tokenizer):
     """ Train the model """
 
     args.train_batch_size = args.per_device_train_batch_size
-    train_sampler = RandomSampler(train_dataset)
+    train_sampler = DistributedSampler(train_dataset)
     train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=args.train_batch_size)
 
     if args.max_steps > 0:
@@ -112,16 +112,20 @@ def train(args, train_dataset, model, tokenizer):
     train_iterator = trange(int(args.num_train_epochs), desc="Epoch", disable=args.local_rank not in [-1, 0])
     set_seed(args)  # Added here for reproductibility (even between python 2 and 3)
     
-    # Timing variables for performance measurement
+    # record timings for logging
+
     iteration_times = []
     
-    # Create loss log file for each node
     rank_id = args.local_rank if args.local_rank != -1 else 0
-    loss_log_file = os.path.join(args.output_dir, f"loss_curve_rank_{rank_id}.txt")
+    
+    os.makedirs(args.output_dir, exist_ok=True)
+    
+    loss_log_file = os.path.join(args.output_dir, f"loss_curve_rank_{rank_id}_task3.txt")
     with open(loss_log_file, 'w') as f:
-        f.write("step,current_loss,avg_loss,time_per_iter_avg,iter_time,eta_minutes\n")
+        f.write("step,current_loss,iter_time\n")
     
     for _ in train_iterator:
+        train_sampler.set_epoch(_) 
         epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0])
         for step, batch in enumerate(epoch_iterator):
             iter_start_time = time.time()
@@ -167,21 +171,14 @@ def train(args, train_dataset, model, tokenizer):
                 # record timings for logging
                 iter_end_time = time.time()
                 iteration_times.append(iter_end_time - iter_start_time)
-                
-                avg_time = sum(iteration_times[-10:]) / min(len(iteration_times), 10)
-                avg_loss = tr_loss / global_step
-                current_iter_time = iteration_times[-1] 
-                
-                iterations_remaining = t_total - global_step
-                estimated_time_remaining = avg_time * iterations_remaining
-                eta_minutes = estimated_time_remaining / 60
+                current_iter_time = iteration_times[-1]
                 
                 with open(loss_log_file, 'a') as f:
-                    f.write(f"{global_step},{current_loss:.6f},{avg_loss:.6f},{avg_time:.6f},{current_iter_time:.6f},{eta_minutes:.2f}\n")
+                    f.write(f"{global_step},{current_loss:.6f},{current_iter_time:.6f}\n")
                 
                 if args.local_rank in [-1, 0]:
-                    logger.info(f"[Rank {rank_id}] Step {global_step}: Current Loss: {current_loss:.4f}, Avg Loss: {avg_loss:.4f}, Time/iter: {avg_time:.3f}s, ETA: {eta_minutes:.2f}m")
-                print(f"[Rank {rank_id}] Step {global_step}, Current Loss: {current_loss:.4f}, Avg Loss: {avg_loss:.4f}, Time/iter: {avg_time:.3f}s, ETA: {eta_minutes:.2f}m")
+                    logger.info(f"[Rank {rank_id}] Step {global_step}: Current Loss: {current_loss:.4f}, Time/iter: {current_iter_time:.3f}s")
+                print(f"[Rank {rank_id}] Step {global_step}, Current Loss: {current_loss:.4f}, Time/iter: {current_iter_time:.3f}s")
 
             if args.max_steps > 0 and global_step > args.max_steps:
                 epoch_iterator.close()
@@ -403,11 +400,11 @@ def main():
 
     # set up (distributed) training
     if args.local_rank == -1:
-        # Single-node training
+        # single node
         args.device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
         args.n_gpu = torch.cuda.device_count()
     else:
-         # Distributed training
+         # distributed nodes
        
         torch.distributed.init_process_group(
             backend='gloo',
@@ -458,14 +455,18 @@ def main():
 
     model.to(args.device)
     
-    
-    
-    model = torch.nn.parallel.DistributedDataParallel(
-        model,
-        device_ids=[args.local_rank],
-        output_device=args.local_rank,
-        find_unused_parameters=True
-    )
+    if args.device.type == 'cuda':
+        model = torch.nn.parallel.DistributedDataParallel(
+            model,
+            device_ids=[args.local_rank],
+            output_device=args.local_rank,
+            find_unused_parameters=True
+        )
+    else:
+        model = torch.nn.parallel.DistributedDataParallel(
+            model,
+            find_unused_parameters=True
+        )
 
     logger.info("Training/evaluation parameters %s", args)
 
