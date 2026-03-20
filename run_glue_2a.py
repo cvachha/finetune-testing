@@ -72,7 +72,7 @@ def train(args, train_dataset, model, tokenizer):
     """ Train the model """
 
     args.train_batch_size = args.per_device_train_batch_size
-    train_sampler = RandomSampler(train_dataset)
+    train_sampler = DistributedSampler(train_dataset)
     train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=args.train_batch_size)
 
     if args.max_steps > 0:
@@ -126,6 +126,7 @@ def train(args, train_dataset, model, tokenizer):
         f.write("step,current_loss,avg_loss,time_per_iter_avg,iter_time,eta_minutes\n")
     
     for _ in train_iterator:
+        train_sampler.set_epoch(_)  # Set epoch for DistributedSampler to ensure proper shuffling
         epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0])
         for step, batch in enumerate(epoch_iterator):
             iter_start_time = time.time()
